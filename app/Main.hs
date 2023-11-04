@@ -12,15 +12,19 @@ import Control.Monad (forM, when)
 import Data.List (maximumBy, find)
 import Data.Function (on)
 import Text.Read (readMaybe)
-import Data.Maybe (fromMaybe)
-import Debug.Trace
+import Data.Maybe (fromMaybe, listToMaybe)
+import System.IO (Handle, hGetContents, stdin, stderr, hPutStrLn)
 
 main :: IO ()
 main = do
-  contents <- getContents
-  let allResults = fst $ head $ P.readP_to_S linesP contents
-  --mainWith $ renderCharacterMap 30 (fmap snd allResults)
-  mainWith $ renderWrite allResults gothicSimplex "My name is Dylan!"
+  mbResults <- parseFromFile stdin
+  case mbResults of
+    Nothing -> hPutStrLn stderr "Input file could not be parsed."
+    Just allResults ->
+      --mainWith $ renderCharacterMap 30 allResults
+      --mainWith $ renderCharacterMap 30 [c | i <- gothicSimplex, Just c <- [find ((i ==) . idx) allResults]]
+      mainWith $ renderWrite allResults gothicSimplex (TextOptions (-1) 20 5)
+        ["Hello, your name is Sam!", "I am 24 years old."]
 
   pure ()
 
@@ -29,10 +33,10 @@ main = do
 --------------------------------------------------------------------------------
 
 data Character = Character
-  { idx :: Int
-  , leftBound :: Int
-  , rightBound :: Int
-  , instrs :: [Instr]
+  { idx :: !Int
+  , leftBound :: !Int
+  , rightBound :: !Int
+  , instrs :: ![Instr]
   }
   deriving (Show, Eq)
 
@@ -72,8 +76,21 @@ renderCharacterMap charSize characters = vsep 1 $ do
     let (start, rest) = splitAt n xs
      in start : chunksOf n rest
 
-renderWrite :: [Character] -> [Int] -> String -> Diagram B
-renderWrite chars idxs text = hcat $ map renderCharacter $ pickWithIndex chars idxs text
+data TextOptions = TextOptions
+  { justify :: Double
+  , aboveBaseline :: Double
+  , belowBaseline :: Double
+  }
+  deriving (Show, Eq, Ord)
+
+renderWrite :: [Character] -> [Int] -> TextOptions -> [String] -> Diagram B
+renderWrite chars idxs TextOptions{..} texts = vcat $ map renderLine texts
+  where
+    renderLine text =
+      let line = hcat $ map renderCharacter $ pickWithIndex chars idxs text
+          yBound = fromVertices [p2 (0, -belowBaseline), p2 (0, aboveBaseline)]
+      in
+      alignX justify (withEnvelope (line <> yBound) line)
 
 pickWithIndex :: [Character] -> [Int] -> String -> [Character]
 pickWithIndex chars idxs text =
@@ -102,12 +119,17 @@ gothicSimplex = concat
 -- Parsing
 --------------------------------------------------------------------------------
 
+parseFromFile :: Handle -> IO (Maybe [Character])
+parseFromFile handle = do
+  contents <- hGetContents handle
+  pure $ fmap fst $ listToMaybe $ P.readP_to_S linesP contents
+
 getInt :: ReadP Int
 getInt = P.readS_to_P reads
 
 linesP :: ReadP [Character]
 linesP = do
-  commands <- P.sepBy lineP (P.many (P.char '\n'))
+  commands <- P.sepBy lineP (P.char '\n')
   P.many $ P.satisfy isSpace
   P.eof
   pure commands
@@ -125,24 +147,7 @@ lineP = do
   lexemeCount <- readIntN 3
   (leftBound, rightBound) <- lexemeP
   let lexemesLeft = lexemeCount - 1
-  instrs <-
-    if lexemesLeft == 31
-      then do
-        instrs <- P.count lexemesLeft instrP
-        P.char '\n'
-        pure instrs
-      else do
-        let groupSizes
-              | lexemesLeft <= 31 = [lexemesLeft]
-              | otherwise =
-                  let (a, b) = (lexemesLeft - 31) `divMod` 36
-                  in
-                  filter (/= 0) $ [31] ++ replicate a 36 ++ [b]
-        groups <- flip traverse groupSizes $ \groupSize -> do
-          group <- P.count groupSize instrP
-          P.char '\n'
-          pure group
-        pure (concat groups)
+  instrs <- P.count lexemesLeft instrP
   pure Character{..}
 
 lexemeP :: ReadP (Int, Int)

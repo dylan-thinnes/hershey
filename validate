@@ -1,0 +1,10 @@
+#!/usr/bin/env -S perl -n
+/^.....(...)/;
+my $expected = $1 * 2 + 9;
+if (length != $expected) {
+  print $expected, length, $_;
+  exit 1
+}
+$n++
+
+}{print "All good! $n\n"
