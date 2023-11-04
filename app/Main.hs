@@ -12,51 +12,32 @@ import Control.Monad (forM, when)
 import Data.List (maximumBy)
 import Data.Function (on)
 import Text.Read (readMaybe)
-import Data.Foldable (toList)
+import Data.Maybe (fromMaybe)
 import Debug.Trace
 
 main :: IO ()
 main = do
-  --lines <- ignoreEmptyLines . splitWhileMergingLongLines <$> getContents
-  --results <- forM lines $ \line -> do
-  --  let result = P.readP_to_S lineP line
-  --  if null result
-  --     then putStrLn $ "Couldn't parse: " ++ show line
-  --     else putStrLn $ "Success! " ++ show result
-  --  pure $ case [a | (a, "") <- result] of
-  --           [] -> error $ "Error: " ++ show result
-  --           [x] -> x
-  --mainWith $ vsep 1 $ map (hsep 1) $ take 40 $ chunksOf 40 $ map (renderCommand . snd) results
-
-  --lines <- ignoreEmptyLines . splitWhileMergingLongLines <$> getContents
-  --results <- forM lines $ \line -> do
-  --  let result = P.readP_to_S lineP line
-  --  if null result
-  --     then putStrLn $ "Couldn't parse: " ++ show line
-  --     else pure ()
-
-  --contents <- getContents
-  --let allResults = fst $ head $ P.readP_to_S linesP contents
-  --let results = allResults `indexBy` gothicSimplex
-  --let layoutSquareSize = ceiling (sqrt (fromIntegral (length results)))
-  --mainWith $ vsep 1 $
-  --  map (\xs -> (alignedText 1 0.5 (show (fst (head xs))) # fontSize 5) ||| hcat (map (renderCommand . snd) xs)) $
-  --    chunksOf layoutSquareSize results
-
   contents <- getContents
   let allResults = fst $ head $ P.readP_to_S linesP contents
-  mainWith $ hsep 0.1 $ map renderCommand $ writeWith (map snd (allResults `indexBy` gothicSimplex)) "Hello World!"
+  --mainWith $
+  --  vsep 1 $
+  --    map (hsep 1 . map (withEnvelope (square 25 :: Diagram B) . renderCommand . snd)) $
+  --      chunkIntoSquare allResults
+  mainWith $
+    hcat $ map renderCommand $
+      writeWith (allResults `indexBy` gothicSimplex) "My name is Dylan!"
 
   pure ()
 
 writeWith :: [a] -> String -> [a]
 writeWith asciiMapping text = map (\c -> asciiMapping !! (fromEnum c - 32)) text
 
-indexBy :: [(Int, a)] -> [Int] -> [(Int, a)]
+indexBy :: [(Int, a)] -> [Int] -> [a]
 indexBy map idxs =
-  [ (idx, a)
+  [ fromMaybe
+      (error "indexBy: given index that does not exist.")
+      (idx `lookup` map)
   | idx <- idxs
-  , a <- toList (idx `lookup` map)
   ]
 
 gothicSimplex :: [Int]
@@ -77,16 +58,21 @@ overlapEnvelope overlapper dia =
 
 renderCommand :: Command -> Diagram B
 renderCommand Command{..} =
-  foldMap renderGroup (splitGroups [] instrs)
-    # overlapEnvelope (rect (fromIntegral rightBound - fromIntegral leftBound) 30 :: Diagram B)
-    -- # overlapEnvelope (rect 30 30 :: Diagram B)
-    # lw 0.4
-  where
-    renderGroup group = fromVertices (map (\(x, y) -> p2 (fromIntegral x, -fromIntegral y)) group)
+  let renderGroup group = fromVertices (map (\(x, y) -> p2 (fromIntegral x, -fromIntegral y)) group)
+      unpaddedLetter = foldMap renderGroup (splitGroups [] instrs) # lw 0.4
+  in
+  withEnvelope
+    (unpaddedLetter <>
+      fromVertices [p2 (fromIntegral leftBound, 0), p2 (fromIntegral rightBound, 0)])
+    unpaddedLetter
 
-chunksOf :: Int -> [a] -> [[a]]
-chunksOf n [] = []
-chunksOf n xs = let (start, rest) = splitAt n xs in start : chunksOf n rest
+chunkIntoSquare :: [a] -> [[a]]
+chunkIntoSquare xs = go (ceiling (sqrt (fromIntegral (length xs)))) xs
+  where
+  go n [] = []
+  go n xs =
+    let (start, rest) = splitAt n xs
+     in start : go n rest
 
 splitGroups :: [(Int, Int)] -> [Instr] -> [[(Int, Int)]]
 splitGroups group (LiftPen:rest) = group : splitGroups [] rest
