@@ -19,24 +19,28 @@ main :: IO ()
 main = do
   contents <- getContents
   let allResults = fst $ head $ P.readP_to_S linesP contents
-  --mainWith $
-  --  vsep 1 $
-  --    map (hsep 1 . map (withEnvelope (square 25 :: Diagram B) . renderCommand . snd)) $
-  --      chunkIntoSquare allResults
+  --mainWith $ renderCharacterMap 30 (fmap snd allResults)
   mainWith $
-    hcat $ map renderCommand $
-      writeWith (allResults `indexBy` gothicSimplex) "My name is Dylan!"
+    hcat $ map renderCharacter $
+      writeWithIndex allResults gothicSimplex "My name is Dylan!"
 
   pure ()
 
-writeWith :: [a] -> String -> [a]
-writeWith asciiMapping text = map (\c -> asciiMapping !! (fromEnum c - 32)) text
+--------------------------------------------------------------------------------
+-- Indexing via Maps
+--------------------------------------------------------------------------------
+
+writeWithIndex :: [(Int, Character)] -> [Int] -> String -> [Character]
+writeWithIndex chars idxs text =
+  let mapping = chars `indexBy` idxs
+  in
+  map (\c -> mapping !! (fromEnum c - 32)) text
 
 indexBy :: [(Int, a)] -> [Int] -> [a]
-indexBy map idxs =
+indexBy chars idxs =
   [ fromMaybe
       (error "indexBy: given index that does not exist.")
-      (idx `lookup` map)
+      (idx `lookup` chars)
   | idx <- idxs
   ]
 
@@ -52,12 +56,12 @@ gothicSimplex = concat
   , [2225, 723, 2226, 2246, 718]
   ]
 
-overlapEnvelope :: Diagram B -> Diagram B -> Diagram B
-overlapEnvelope overlapper dia =
-  setEnvelope (overlapper ^. envelope <> dia ^. envelope) dia
+--------------------------------------------------------------------------------
+-- Rendering
+--------------------------------------------------------------------------------
 
-renderCommand :: Command -> Diagram B
-renderCommand Command{..} =
+renderCharacter :: Character -> Diagram B
+renderCharacter Character{..} =
   let renderGroup group = fromVertices (map (\(x, y) -> p2 (fromIntegral x, -fromIntegral y)) group)
       unpaddedLetter = foldMap renderGroup (splitGroups [] instrs) # lw 0.4
   in
@@ -66,20 +70,24 @@ renderCommand Command{..} =
       fromVertices [p2 (fromIntegral leftBound, 0), p2 (fromIntegral rightBound, 0)])
     unpaddedLetter
 
-chunkIntoSquare :: [a] -> [[a]]
-chunkIntoSquare xs = go (ceiling (sqrt (fromIntegral (length xs)))) xs
-  where
-  go n [] = []
-  go n xs =
-    let (start, rest) = splitAt n xs
-     in start : go n rest
-
 splitGroups :: [(Int, Int)] -> [Instr] -> [[(Int, Int)]]
 splitGroups group (LiftPen:rest) = group : splitGroups [] rest
 splitGroups group (Move x y:rest) = splitGroups ((x, y) : group) rest
 splitGroups group [] = [group]
 
-data Command = Command
+renderCharacterMap :: Double -> [Character] -> Diagram B
+renderCharacterMap charSize characters = vsep 1 $ do
+  row <- chunksOf (ceiling (sqrt (fromIntegral (length characters)))) characters
+  pure $ hsep 1 $ do
+    character <- row
+    pure (withEnvelope (square charSize :: Diagram B) (renderCharacter character))
+  where
+  chunksOf n [] = []
+  chunksOf n xs =
+    let (start, rest) = splitAt n xs
+     in start : chunksOf n rest
+
+data Character = Character
   { idx :: Int
   , leftBound :: Int
   , rightBound :: Int
@@ -95,7 +103,7 @@ data Instr
 getInt :: ReadP Int
 getInt = P.readS_to_P reads
 
-linesP :: ReadP [(Int, Command)]
+linesP :: ReadP [(Int, Character)]
 linesP = do
   commands <- P.sepBy lineP (P.many (P.char '\n'))
   P.many $ P.satisfy isSpace
@@ -109,7 +117,7 @@ readIntN n = do
     Nothing -> P.pfail
     Just i -> pure i
 
-lineP :: ReadP (Int, Command)
+lineP :: ReadP (Int, Character)
 lineP = do
   idx <- readIntN 5
   lexemeCount <- readIntN 3
@@ -133,7 +141,7 @@ lineP = do
           P.char '\n'
           pure group
         pure (concat groups)
-  pure (idx, Command{..})
+  pure (idx, Character{..})
 
 lexemeP :: ReadP (Int, Int)
 lexemeP = do
