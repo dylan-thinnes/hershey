@@ -1,4 +1,4 @@
-#!/usr/bin/env -S awk -f
+#!/usr/bin/env -S gawk -f
 /^[0-9 ]{8}/ {
   if (NR != 1) printf "\n"
   printf "%s", $0
