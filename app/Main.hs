@@ -9,7 +9,7 @@ import Text.ParserCombinators.ReadP (ReadP)
 import qualified Text.ParserCombinators.ReadP as P
 import Data.Char (ord, isDigit, isSpace)
 import Control.Monad (forM, when)
-import Data.List (maximumBy)
+import Data.List (maximumBy, find)
 import Data.Function (on)
 import Text.Read (readMaybe)
 import Data.Maybe (fromMaybe)
@@ -20,41 +20,26 @@ main = do
   contents <- getContents
   let allResults = fst $ head $ P.readP_to_S linesP contents
   --mainWith $ renderCharacterMap 30 (fmap snd allResults)
-  mainWith $
-    hcat $ map renderCharacter $
-      writeWithIndex allResults gothicSimplex "My name is Dylan!"
+  mainWith $ renderWrite allResults gothicSimplex "My name is Dylan!"
 
   pure ()
 
 --------------------------------------------------------------------------------
--- Indexing via Maps
+-- Data Types
 --------------------------------------------------------------------------------
 
-writeWithIndex :: [(Int, Character)] -> [Int] -> String -> [Character]
-writeWithIndex chars idxs text =
-  let mapping = chars `indexBy` idxs
-  in
-  map (\c -> mapping !! (fromEnum c - 32)) text
+data Character = Character
+  { idx :: Int
+  , leftBound :: Int
+  , rightBound :: Int
+  , instrs :: [Instr]
+  }
+  deriving (Show, Eq)
 
-indexBy :: [(Int, a)] -> [Int] -> [a]
-indexBy chars idxs =
-  [ fromMaybe
-      (error "indexBy: given index that does not exist.")
-      (idx `lookup` chars)
-  | idx <- idxs
-  ]
-
-gothicSimplex :: [Int]
-gothicSimplex = concat
-  [ [699, 714, 717, 733, 719, 2271, 734, 731]
-  , [721, 722, 2219, 725, 711, 724, 710, 720]
-  , [700..709]
-  , [712, 713, 2241, 726, 2242, 715, 2273]
-  , [501..526]
-  , [2223, 804, 2224, 2262, 999, 730]
-  , [601..626]
-  , [2225, 723, 2226, 2246, 718]
-  ]
+data Instr
+  = Move Int Int
+  | LiftPen
+  deriving (Show, Eq)
 
 --------------------------------------------------------------------------------
 -- Rendering
@@ -87,23 +72,40 @@ renderCharacterMap charSize characters = vsep 1 $ do
     let (start, rest) = splitAt n xs
      in start : chunksOf n rest
 
-data Character = Character
-  { idx :: Int
-  , leftBound :: Int
-  , rightBound :: Int
-  , instrs :: [Instr]
-  }
-  deriving (Show, Eq)
+renderWrite :: [Character] -> [Int] -> String -> Diagram B
+renderWrite chars idxs text = hcat $ map renderCharacter $ pickWithIndex chars idxs text
 
-data Instr
-  = Move Int Int
-  | LiftPen
-  deriving (Show, Eq)
+pickWithIndex :: [Character] -> [Int] -> String -> [Character]
+pickWithIndex chars idxs text =
+  map (\c -> mapping !! (fromEnum c - 32)) text
+  where
+    mapping :: [Character]
+    mapping =
+      [ fromMaybe (error "indexBy: given index that does not exist.") mChar
+      | targetIdx <- idxs
+      , let mChar = find (\char -> targetIdx == idx char) chars
+      ]
+
+gothicSimplex :: [Int]
+gothicSimplex = concat
+  [ [699, 714, 717, 733, 719, 2271, 734, 731]
+  , [721, 722, 2219, 725, 711, 724, 710, 720]
+  , [700..709]
+  , [712, 713, 2241, 726, 2242, 715, 2273]
+  , [501..526]
+  , [2223, 804, 2224, 2262, 999, 730]
+  , [601..626]
+  , [2225, 723, 2226, 2246, 718]
+  ]
+
+--------------------------------------------------------------------------------
+-- Parsing
+--------------------------------------------------------------------------------
 
 getInt :: ReadP Int
 getInt = P.readS_to_P reads
 
-linesP :: ReadP [(Int, Character)]
+linesP :: ReadP [Character]
 linesP = do
   commands <- P.sepBy lineP (P.many (P.char '\n'))
   P.many $ P.satisfy isSpace
@@ -117,7 +119,7 @@ readIntN n = do
     Nothing -> P.pfail
     Just i -> pure i
 
-lineP :: ReadP (Int, Character)
+lineP :: ReadP Character
 lineP = do
   idx <- readIntN 5
   lexemeCount <- readIntN 3
@@ -141,7 +143,7 @@ lineP = do
           P.char '\n'
           pure group
         pure (concat groups)
-  pure (idx, Character{..})
+  pure Character{..}
 
 lexemeP :: ReadP (Int, Int)
 lexemeP = do
